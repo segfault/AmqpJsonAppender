@@ -12,7 +12,6 @@ using log4net.Appender;
 using System.Diagnostics;
 using Newtonsoft.Json;
 
-
 namespace Haukcode.AmqpJsonAppender
 {
     public class AmqpJsonAppender : AppenderSkeleton, IDisposable
@@ -122,7 +121,7 @@ namespace Haukcode.AmqpJsonAppender
                 loggingBuffer.Dispose();
             }
 
-            if (messagePump != null)
+            if (messagePump != null && messagePump.IsAlive)
             {
                 messagePump.Abort();
                 messagePump.Join(5000);
@@ -383,7 +382,6 @@ namespace Haukcode.AmqpJsonAppender
         }
     }
 
-
     public class JsonMessage
     {
         public string Facility { get; set; }
@@ -418,7 +416,6 @@ namespace Haukcode.AmqpJsonAppender
         {
             this.AdditionalFields = new List<KeyValuePair<string, string>>();
         }
-
 
         private void addObjKvp(JsonTextWriter jsw, string key, string val)
         {
@@ -462,5 +459,4 @@ namespace Haukcode.AmqpJsonAppender
             return output;
         }
     }
-
 }

@@ -9,11 +9,13 @@ using System.Xml;
 using System.IO;
 
 using log4net.Appender;
+using System.Diagnostics;
+using Newtonsoft.Json;
 
 
 namespace Haukcode.AmqpJsonAppender
 {
-    public class AmqpJsonAppender : AppenderSkeleton
+    public class AmqpJsonAppender : AppenderSkeleton, IDisposable
     {
         public static string UNKNOWN_HOST = "unknown_host";
 
@@ -25,6 +27,7 @@ namespace Haukcode.AmqpJsonAppender
         private string additionalFields;
         private Thread messagePump;
         private string version;
+        private bool active;
 
 
         //---------------------------------------
@@ -99,21 +102,34 @@ namespace Haukcode.AmqpJsonAppender
 
             BufferSize = 500;
 
+            active = true;
             messagePump = new Thread(ThreadProc);
+            messagePump.IsBackground = true;
         }
 
         protected override void OnClose()
         {
+            active = false;
+
             if (amqpTransport != null)
             {
                 amqpTransport.Close();
                 amqpTransport = null;
             }
 
-            messagePump.Abort();
-            messagePump.Join(5000);
+            if (loggingBuffer != null)
+            {
+                loggingBuffer.Dispose();
+            }
+
+            if (messagePump != null)
+            {
+                messagePump.Abort();
+                messagePump.Join(5000);
+            }
 
             messagePump = null;
+            loggingBuffer = null;
 
             base.OnClose();
         }
@@ -151,11 +167,13 @@ namespace Haukcode.AmqpJsonAppender
             {
                 var queue = (LossyBlockingQueue<string>)stateInfo;
 
-                while (true)
+                while (active)
                 {
                     try
                     {
                         var jsonMessage = queue.Dequeue();
+                        if (jsonMessage == null)
+                            continue;
 
                         SendAmqpMessage(jsonMessage);
                     }
@@ -165,8 +183,11 @@ namespace Haukcode.AmqpJsonAppender
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+#if DEBUG
+                Debug.WriteLine(ex.ToString());
+#endif
             }
         }
 
@@ -341,7 +362,6 @@ namespace Haukcode.AmqpJsonAppender
             return jsonMessage.GetJSON();
         }
 
-
         /// <summary>
         /// Add    
         /// </summary>
@@ -355,6 +375,11 @@ namespace Haukcode.AmqpJsonAppender
                 key = Regex.Replace(key, "[\\W]", "");
                 message.AdditionalFields.Add(new KeyValuePair<string, string>(key, value));
             }
+        }
+
+        public void Dispose()
+        {
+            OnClose();
         }
     }
 
@@ -394,76 +419,47 @@ namespace Haukcode.AmqpJsonAppender
             this.AdditionalFields = new List<KeyValuePair<string, string>>();
         }
 
-        private void AppendKeyValue(StringBuilder sb, string key, string value)
+
+        private void addObjKvp(JsonTextWriter jsw, string key, string val)
         {
-            if (string.IsNullOrEmpty(value) || value == "(null)")
-                return;
-
-            StringBuilder stripped = new StringBuilder();
-            foreach (char ch in value)
-            {
-                switch (ch)
-                {
-                    case '\\':
-                        stripped.Append("\\\\");
-                        break;
-                    case '"':
-                        stripped.Append("\\\"");
-                        break;
-                    case '\n':
-                        stripped.Append("\\n");
-                        break;
-                    case '\r':
-                        stripped.Append("\\r");
-                        break;
-                    case '¤':
-                        stripped.Append("$");
-                        break;
-                    case '\t':
-                        stripped.Append("  ");
-                        break;
-                    default:
-                        if (ch >= ' ')
-                            stripped.Append(ch);
-                        break;
-                }
-            }
-
-            sb.AppendFormat("\"{0}\":\"{1}\",", key.ToLower(), stripped.ToString());
+            jsw.WritePropertyName(key);
+            jsw.WriteValue(val);
         }
 
         public string GetJSON()
         {
-            string type = "log4net";
+            var ms = new MemoryStream();
+            var sw = new StreamWriter(ms);
+            var jsw = new JsonTextWriter(sw);
 
-            var sb = new StringBuilder();
-            sb.Append("{\"create\":{");
-            sb.AppendFormat("\"_index\":\"{0}\"", Index);
-            sb.AppendFormat(",\"_type\":\"{0}\"", type);
-            sb.AppendLine("}}");
 
-            sb.Append("{");
-            AppendKeyValue(sb, "@source", "amqpjsonappender");
-            AppendKeyValue(sb, "@source_path", "//amqpjsonappender");
-            AppendKeyValue(sb, "@source_host", Host);
-            AppendKeyValue(sb, "@type", "log4net");
-            AppendKeyValue(sb, "@timestamp", TimestampISO8601);
-            AppendKeyValue(sb, "@message", FullMessage);
-            AppendKeyValue(sb, "@seq", Sequence.ToString());
 
-            sb.Append("\"@fields\":{");
-            AppendKeyValue(sb, "facility", Facility);
-            AppendKeyValue(sb, "file", File);
-            AppendKeyValue(sb, "level", Level);
-            AppendKeyValue(sb, "line", Line);
+            jsw.WriteStartObject();
+            addObjKvp(jsw, "@source", "amqpjsonappender");
+            addObjKvp(jsw, "@source_path", "amqpjsonappender");
+            addObjKvp(jsw, "@source_host", Host);
+            addObjKvp(jsw, "@type", "log4net");
+            addObjKvp(jsw, "@timestamp", TimestampISO8601);
+            addObjKvp(jsw, "@message", FullMessage);
+            addObjKvp(jsw, "@seq", Sequence.ToString());
+
+            jsw.WritePropertyName("@fields");
+            jsw.WriteStartObject();
+            addObjKvp(jsw, "facility", Facility);
+            addObjKvp(jsw, "file", File);
+            addObjKvp(jsw, "level", Level);
+            addObjKvp(jsw, "line", Line);
 
             foreach (var kvp in AdditionalFields)
-                AppendKeyValue(sb, kvp.Key, kvp.Value);
+                addObjKvp(jsw, kvp.Key, kvp.Value);
 
-            sb = sb.Remove(sb.Length - 1, 1);
-            sb.AppendLine("}}");
+            jsw.WriteEndObject();
+            jsw.WriteEndObject();
+            jsw.Flush();
 
-            return sb.ToString();
+            var output = UTF8Encoding.UTF8.GetString(ms.ToArray());
+
+            return output;
         }
     }
 

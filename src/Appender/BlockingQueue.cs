@@ -6,7 +6,7 @@ using System.Text;
 
 namespace Haukcode.AmqpJsonAppender
 {
-    public class LossyBlockingQueue<T> : IDisposable
+    public class LossyBlockingQueue<T> : IDisposable where T : class
     {
         private Queue<T> _queue = new Queue<T>();
         private Semaphore _semaphore = new Semaphore(0, int.MaxValue);
@@ -27,7 +27,7 @@ namespace Haukcode.AmqpJsonAppender
                 {
                     // Only queue if we have less than X items in the queue
                     _queue.Enqueue(data);
-                    added = true;
+                    added = (_queue.Count % 5) == 0;
                 }
             }
             if(added)
@@ -36,11 +36,18 @@ namespace Haukcode.AmqpJsonAppender
 
         public T Dequeue()
         {
-            _semaphore.WaitOne();
-            lock (_queue) return _queue.Dequeue();
+            _semaphore.WaitOne(3000);
+
+            lock (_queue)
+            {
+                if (_queue.Count == 0)
+                    return null;
+
+                return _queue.Dequeue();
+            }
         }
 
-        void IDisposable.Dispose()
+        public void Dispose()
         {
             if (_semaphore != null)
             {

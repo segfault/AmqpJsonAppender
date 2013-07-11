@@ -17,7 +17,7 @@ namespace Haukcode.AmqpJsonAppender.Test
             log4net.Config.XmlConfigurator.Configure();
 
             for(int index = 0; index < 10; index++)
-                log.InfoFormat("Hello world \"{0}\"  \\\nHej", index + 1);
+                log.InfoFormat("Hello world \"{0}\"  \'\\\nHej", index + 1);
 
             log.Info("Result string: ResponseStatus=SUCCESS&ResponseMessage=Success&ResponseTIBCount=1&TransactionID=&TransactionStatus=COMPLETED&TransactionResult=0&TransactionMessage=Approved&TransactionStartDate=Mon+Sep+19+17%3A35%3A13+PDT+2011&TransactionLastDate=Mon+Sep+19+17%3A35%3A13+PDT+2011&TransactionDuration=13&AccountID=1sfsdfasd3sfd1fs6sf4d7WJVDJIDL&ClientTransactionID=");
             System.Threading.Thread.Sleep(2000);
@@ -25,6 +25,7 @@ namespace Haukcode.AmqpJsonAppender.Test
             Console.WriteLine("Closing down");
 
             log4net.LogManager.Shutdown();
+            Console.ReadKey();
         }
     }
 }

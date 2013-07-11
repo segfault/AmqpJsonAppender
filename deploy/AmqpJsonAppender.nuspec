@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package >
+  <metadata>
+    <id>AmqpJsonAppender</id>
+    <version>2011.1.4674.23200</version>
+    <authors>Github - segfault</authors>
+    <owners>Github - segfault</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Amqp Json log4net appender (RabbitMQ)</description>
+    <releaseNotes></releaseNotes>
+    <copyright>Copyright 2008-2012</copyright>
+    <tags>RabbitMQ</tags>
+    <references>
+      <reference file="AmqpJsonAppender.dll" />
+      <reference file="RabbitMQ.Client.dll" />
+    </references> 
+  </metadata>
+  <files>
+    <file src="**\*.dll" target="lib\net40" />
+    <file src="**\*.pdb" target="lib\net40" />
+    <file src="**\*.xml" target="lib\net40" />
+  </files>
+</package>

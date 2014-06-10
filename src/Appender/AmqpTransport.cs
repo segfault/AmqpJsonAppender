@@ -5,16 +5,16 @@ using System.Text;
 using Apache.NMS.ActiveMQ;
 using Apache.NMS;
 using Apache.NMS.Util;
-//using RabbitMQ.Client;
+
 
 namespace Haukcode.AmqpJsonAppender 
 {
     public class AmqpTransport
     {
         private static object locker = new object();
-        private bool _stopped;
-        private ConnectionFactory _factory;
-        private IConnection _connection;
+        private bool stopped;
+        private ConnectionFactory factory;
+        private IConnection connection;
         private ISession _session;
         private IDestination _destination;
         private IMessageProducer _producer;
@@ -32,16 +32,16 @@ namespace Haukcode.AmqpJsonAppender
         }
         public void Close()
         {
-            _stopped = true;
+            stopped = true;
             lock (locker)
             {
                 if (_session != null)
                     _session.Close();
 
-                if (_connection != null)
-                    _connection.Close();
+                if (connection != null)
+                    connection.Close();
 
-                _factory = null;
+                factory = null;
             }
         }
 
@@ -49,13 +49,13 @@ namespace Haukcode.AmqpJsonAppender
         {
             get
             {
-                if (_factory != null)
-                    return _factory;
+                if (factory != null)
+                    return factory;
 
                 lock (locker)
                 {
-                    _factory = new ConnectionFactory("activemq:tcp://WCT-WS016:61616");
-                    return _factory;
+                    factory = new ConnectionFactory("activemq:tcp://WCT-WS016:61616");
+                    return factory;
                 }
             }
         }
@@ -65,16 +65,16 @@ namespace Haukcode.AmqpJsonAppender
         {
             get
             {
-                if (_connection != null)
-                    return _connection;
+                if (connection != null)
+                    return connection;
 
                 lock (locker)
                 {
-                    _factory = Factory;
-                    _connection = _factory.CreateConnection(User, Password);
+                    factory = Factory;
+                    connection = factory.CreateConnection(User, Password);
                     
                    
-                    return _connection;
+                    return connection;
                 }
             }
         }
@@ -95,18 +95,18 @@ namespace Haukcode.AmqpJsonAppender
                 }
                 _session = null;
 
-                if (_connection != null)
+                if (connection != null)
                 {
                     try
                     {
-                        _connection.Close();
+                        connection.Close();
                     }
                     catch
                     {
                     }
                 }
-                _connection = null;
-                _factory = null;
+                connection = null;
+                factory = null;
             }
         }
 
@@ -121,7 +121,7 @@ namespace Haukcode.AmqpJsonAppender
                 _destination = SessionUtil.GetDestination(session, "queue://elasticsearch");
                 _producer = session.CreateProducer(_destination);
 
-                if (!_stopped)
+                if (!stopped)
                     _producer.Send(_request);
             }
             catch (Apache.NMS.ActiveMQ.BrokerException)
@@ -136,7 +136,6 @@ namespace Haukcode.AmqpJsonAppender
             }
             catch (Exception e)
             {
-                throw e;
                 Reset();
             }
         }

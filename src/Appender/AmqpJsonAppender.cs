@@ -16,17 +16,17 @@ namespace Haukcode.AmqpJsonAppender
 {
     public class AmqpJsonAppender : AppenderSkeleton, IDisposable
     {
-        public static string UNKNOWN_HOST = "unknown_host";
+        public static string UnknownHost = "unknown_host";
 
-        private AmqpTransport amqpTransport;
+        private AmqpTransport _amqpTransport;
         private LossyBlockingQueue<string> loggingBuffer;
 
-        private static readonly object locker = new object();
-        private static long sequence = 0;
-        private string additionalFields;
-        private Thread messagePump;
+        private static readonly object Locker = new object();
+        private static long _sequence = 0;
+        private string _additionalFields;
+        private Thread _messagePump;
         private string version;
-        private bool active;
+        private bool _active;
 
 
         //---------------------------------------
@@ -37,13 +37,13 @@ namespace Haukcode.AmqpJsonAppender
         {
             get
             {
-                return additionalFields;
+                return _additionalFields;
             }
             set
             {
-                additionalFields = value;
+                _additionalFields = value;
 
-                if (additionalFields != null)
+                if (_additionalFields != null)
                 {
                     innerAdditionalFields = new Dictionary<string, string>();
                 }
@@ -51,7 +51,7 @@ namespace Haukcode.AmqpJsonAppender
                 {
                     innerAdditionalFields.Clear();
                 }
-                var fields = additionalFields.Split(',');
+                var fields = _additionalFields.Split(',');
                 var dict = new Dictionary<string, string>();
                 foreach (var field in fields)
                 {
@@ -101,19 +101,19 @@ namespace Haukcode.AmqpJsonAppender
 
             BufferSize = 500;
 
-            active = true;
-            messagePump = new Thread(ThreadProc);
-            messagePump.IsBackground = true;
+            _active = true;
+            _messagePump = new Thread(ThreadProc);
+            _messagePump.IsBackground = true;
         }
 
         protected override void OnClose()
         {
-            active = false;
+            _active = false;
 
-            if (amqpTransport != null)
+            if (_amqpTransport != null)
             {
-                amqpTransport.Close();
-                amqpTransport = null;
+                _amqpTransport.Close();
+                _amqpTransport = null;
             }
 
             if (loggingBuffer != null)
@@ -121,13 +121,13 @@ namespace Haukcode.AmqpJsonAppender
                 loggingBuffer.Dispose();
             }
 
-            if (messagePump != null && messagePump.IsAlive)
+            if (_messagePump != null && _messagePump.IsAlive)
             {
-                messagePump.Abort();
-                messagePump.Join(5000);
+                _messagePump.Abort();
+                _messagePump.Join(5000);
             }
 
-            messagePump = null;
+            _messagePump = null;
             loggingBuffer = null;
 
             base.OnClose();
@@ -141,12 +141,12 @@ namespace Haukcode.AmqpJsonAppender
                 if (loggingBuffer != null)
                     return loggingBuffer;
 
-                lock (locker)
+                lock (Locker)
                 {
                     loggingBuffer = new LossyBlockingQueue<string>(BufferSize);
                 }
 
-                messagePump.Start(loggingBuffer);
+                _messagePump.Start(loggingBuffer);
 
                 return loggingBuffer;
             }
@@ -155,8 +155,8 @@ namespace Haukcode.AmqpJsonAppender
 
         private long GetSequenceNumber()
         {
-            lock (locker)
-                return ++sequence;
+            lock (Locker)
+                return ++_sequence;
         }
 
 
@@ -166,7 +166,7 @@ namespace Haukcode.AmqpJsonAppender
             {
                 var queue = (LossyBlockingQueue<string>)stateInfo;
 
-                while (active)
+                while (_active)
                 {
                     try
                     {
@@ -218,7 +218,7 @@ namespace Haukcode.AmqpJsonAppender
                     }
                     catch
                     {
-                        return UNKNOWN_HOST;
+                        return UnknownHost;
                     }
                 }
                 return ret;
@@ -232,9 +232,9 @@ namespace Haukcode.AmqpJsonAppender
         /// <param name="message">Message to be sent</param>
         private void SendAmqpMessage(string message)
         {
-            if (amqpTransport == null)
+            if (_amqpTransport == null)
             {
-                amqpTransport = new AmqpTransport()
+                _amqpTransport = new AmqpTransport()
                 {
                     IpAddress = GetIpAddressFromHostName(),
                     Port = AmqpServerPort,
@@ -245,7 +245,7 @@ namespace Haukcode.AmqpJsonAppender
                 };
             }
 
-            amqpTransport.Send(message);
+            _amqpTransport.Send(message);
 
         }
 

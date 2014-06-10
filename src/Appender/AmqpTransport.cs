@@ -1,19 +1,24 @@
 ﻿using System;
+using System.Threading;
 using System.Collections.Generic;
 using System.Text;
-
-using RabbitMQ.Client;
-
+using Apache.NMS.ActiveMQ;
+using Apache.NMS;
+using Apache.NMS.Util;
+//using RabbitMQ.Client;
 
 namespace Haukcode.AmqpJsonAppender 
 {
     public class AmqpTransport
     {
         private static object locker = new object();
-        private bool stopped;
-        private ConnectionFactory factory;
-        private IConnection connection;
-        private IModel model;
+        private bool _stopped;
+        private ConnectionFactory _factory;
+        private IConnection _connection;
+        private ISession _session;
+        private IDestination _destination;
+        private IMessageProducer _producer;
+        private ITextMessage _request;
 
         public string VirtualHost { get; set; }
         public string User { get; set; }
@@ -22,48 +27,35 @@ namespace Haukcode.AmqpJsonAppender
         public string IpAddress { get; set; }
         public int Port { get; set; }
 
-
         public AmqpTransport()
-        {
+        {           
         }
-
-
         public void Close()
         {
-            stopped = true;
+            _stopped = true;
             lock (locker)
             {
-                if (model != null)
-                    model.Close(200, "Shutdown");
+                if (_session != null)
+                    _session.Close();
 
-                if (connection != null)
-                    connection.Close(200, "Shutdown");
+                if (_connection != null)
+                    _connection.Close();
 
-                factory = null;
+                _factory = null;
             }
         }
-
 
         private ConnectionFactory Factory
         {
             get
             {
-                if (factory != null)
-                    return factory;
+                if (_factory != null)
+                    return _factory;
 
                 lock (locker)
                 {
-                    factory = new ConnectionFactory()
-                    {
-                        Protocol = Protocols.FromEnvironment(),
-                        HostName = IpAddress,
-                        Port = Port,
-                        VirtualHost = VirtualHost,
-                        UserName = User,
-                        Password = Password
-                    };
-
-                    return factory;
+                    _factory = new ConnectionFactory("activemq:tcp://WCT-WS016:61616");
+                    return _factory;
                 }
             }
         }
@@ -73,66 +65,48 @@ namespace Haukcode.AmqpJsonAppender
         {
             get
             {
-                if (connection != null)
-                    return connection;
+                if (_connection != null)
+                    return _connection;
 
                 lock (locker)
                 {
-                    connection = Factory.CreateConnection();
-
-                    return connection;
+                    _factory = Factory;
+                    _connection = _factory.CreateConnection(User, Password);
+                    
+                   
+                    return _connection;
                 }
             }
         }
-
-
-        private IModel Model
-        {
-            get
-            {
-                if (model != null)
-                    return model;
-
-                lock (locker)
-                {
-                    model = Connection.CreateModel();
-
-                    return model;
-                }
-            }
-        }
-
 
         private void Reset()
         {
             lock (locker)
             {
-                // Reset
-                if (model != null)
+                if (_session != null)
                 {
                     try
                     {
-                        model.Close();
+                        _session.Close();
+                    }
+                    catch 
+                    {
+                    }
+                }
+                _session = null;
+
+                if (_connection != null)
+                {
+                    try
+                    {
+                        _connection.Close();
                     }
                     catch
                     {
                     }
                 }
-                model = null;
-
-                if (connection != null)
-                {
-                    try
-                    {
-                        connection.Close();
-                    }
-                    catch
-                    {
-                    }
-                }
-                connection = null;
-
-                factory = null;
+                _connection = null;
+                _factory = null;
             }
         }
 
@@ -140,21 +114,29 @@ namespace Haukcode.AmqpJsonAppender
         {
             try
             {
-                var model = Model;
-                var props = model.CreateBasicProperties();
-                props.DeliveryMode = 1;
+                var connection = Connection;
+                var session = connection.CreateSession();
+                _request = session.CreateTextMessage(message);
 
-                if (!stopped)
-                    model.BasicPublish(Queue, "elasticsearch", props, Encoding.UTF8.GetBytes(message));
+                _destination = SessionUtil.GetDestination(session, "queue://elasticsearch");
+                _producer = session.CreateProducer(_destination);
+
+                if (!_stopped)
+                    _producer.Send(_request);
             }
-            catch(RabbitMQ.Client.Exceptions.BrokerUnreachableException)
+            catch (Apache.NMS.ActiveMQ.BrokerException)
             {
                 Reset();
-                // Back off
                 System.Threading.Thread.Sleep(5000);
             }
-            catch
+            
+            catch (ThreadAbortException tae)
             {
+                Console.WriteLine(tae);
+            }
+            catch (Exception e)
+            {
+                throw e;
                 Reset();
             }
         }

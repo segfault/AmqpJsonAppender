@@ -54,12 +54,11 @@ namespace Haukcode.AmqpJsonAppender
 
                 lock (locker)
                 {
-                    factory = new ConnectionFactory("activemq:tcp://WCT-WS016:61616");
+                    factory = new ConnectionFactory("activemq:tcp://" + IpAddress + ":61616");
                     return factory;
                 }
             }
         }
-
 
         private IConnection Connection
         {
@@ -67,13 +66,9 @@ namespace Haukcode.AmqpJsonAppender
             {
                 if (connection != null)
                     return connection;
-
                 lock (locker)
                 {
-                    factory = Factory;
-                    connection = factory.CreateConnection(User, Password);
-                    
-                   
+                    connection = Factory.CreateConnection(User, Password);                  
                     return connection;
                 }
             }
@@ -117,8 +112,7 @@ namespace Haukcode.AmqpJsonAppender
                 var connection = Connection;
                 var session = connection.CreateSession();
                 _request = session.CreateTextMessage(message);
-
-                _destination = SessionUtil.GetDestination(session, "queue://elasticsearch");
+                _destination = SessionUtil.GetDestination(session, "queue://" + Queue);
                 _producer = session.CreateProducer(_destination);
 
                 if (!stopped)
@@ -132,9 +126,10 @@ namespace Haukcode.AmqpJsonAppender
             
             catch (ThreadAbortException tae)
             {
+                // catch debugging exceptions only when a debugger is attached.
                 Console.WriteLine(tae);
             }
-            catch (Exception e)
+            catch 
             {
                 Reset();
             }

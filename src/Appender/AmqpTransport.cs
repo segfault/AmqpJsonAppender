@@ -1,8 +1,10 @@
 ﻿using System;
+using System.Threading;
 using System.Collections.Generic;
 using System.Text;
-
-using RabbitMQ.Client;
+using Apache.NMS.ActiveMQ;
+using Apache.NMS;
+using Apache.NMS.Util;
 
 
 namespace Haukcode.AmqpJsonAppender 
@@ -13,7 +15,10 @@ namespace Haukcode.AmqpJsonAppender
         private bool stopped;
         private ConnectionFactory factory;
         private IConnection connection;
-        private IModel model;
+        private ISession _session;
+        private IDestination _destination;
+        private IMessageProducer _producer;
+        private ITextMessage _request;
 
         public string VirtualHost { get; set; }
         public string User { get; set; }
@@ -22,27 +27,23 @@ namespace Haukcode.AmqpJsonAppender
         public string IpAddress { get; set; }
         public int Port { get; set; }
 
-
         public AmqpTransport()
-        {
+        {           
         }
-
-
         public void Close()
         {
             stopped = true;
             lock (locker)
             {
-                if (model != null)
-                    model.Close(200, "Shutdown");
+                if (_session != null)
+                    _session.Close();
 
                 if (connection != null)
-                    connection.Close(200, "Shutdown");
+                    connection.Close();
 
                 factory = null;
             }
         }
-
 
         private ConnectionFactory Factory
         {
@@ -53,21 +54,11 @@ namespace Haukcode.AmqpJsonAppender
 
                 lock (locker)
                 {
-                    factory = new ConnectionFactory()
-                    {
-                        Protocol = Protocols.FromEnvironment(),
-                        HostName = IpAddress,
-                        Port = Port,
-                        VirtualHost = VirtualHost,
-                        UserName = User,
-                        Password = Password
-                    };
-
+                    factory = new ConnectionFactory("activemq:tcp://" + IpAddress + ":61616");
                     return factory;
                 }
             }
         }
-
 
         private IConnection Connection
         {
@@ -75,50 +66,29 @@ namespace Haukcode.AmqpJsonAppender
             {
                 if (connection != null)
                     return connection;
-
                 lock (locker)
                 {
-                    connection = Factory.CreateConnection();
-
+                    connection = Factory.CreateConnection(User, Password);                  
                     return connection;
                 }
             }
         }
 
-
-        private IModel Model
-        {
-            get
-            {
-                if (model != null)
-                    return model;
-
-                lock (locker)
-                {
-                    model = Connection.CreateModel();
-
-                    return model;
-                }
-            }
-        }
-
-
         private void Reset()
         {
             lock (locker)
             {
-                // Reset
-                if (model != null)
+                if (_session != null)
                 {
                     try
                     {
-                        model.Close();
+                        _session.Close();
                     }
-                    catch
+                    catch 
                     {
                     }
                 }
-                model = null;
+                _session = null;
 
                 if (connection != null)
                 {
@@ -131,7 +101,6 @@ namespace Haukcode.AmqpJsonAppender
                     }
                 }
                 connection = null;
-
                 factory = null;
             }
         }
@@ -140,20 +109,27 @@ namespace Haukcode.AmqpJsonAppender
         {
             try
             {
-                var model = Model;
-                var props = model.CreateBasicProperties();
-                props.DeliveryMode = 1;
+                var connection = Connection;
+                var session = connection.CreateSession();
+                _request = session.CreateTextMessage(message);
+                _destination = SessionUtil.GetDestination(session, "queue://" + Queue);
+                _producer = session.CreateProducer(_destination);
 
                 if (!stopped)
-                    model.BasicPublish(Queue, "elasticsearch", props, Encoding.UTF8.GetBytes(message));
+                    _producer.Send(_request);
             }
-            catch(RabbitMQ.Client.Exceptions.BrokerUnreachableException)
+            catch (Apache.NMS.ActiveMQ.BrokerException)
             {
                 Reset();
-                // Back off
                 System.Threading.Thread.Sleep(5000);
             }
-            catch
+            
+            catch (ThreadAbortException tae)
+            {
+                // catch debugging exceptions only when a debugger is attached.
+                Console.WriteLine(tae);
+            }
+            catch 
             {
                 Reset();
             }
